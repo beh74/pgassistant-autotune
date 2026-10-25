@@ -1,0 +1,70 @@
+# Autotune policy — edit enabled, teams and exclusions to choose your configuration.
+# Validate/preview without connecting to PostgreSQL:
+#   python -m app.policies config/policy.yaml
+version: 1
+mode: execute                   # dry_run: preview only; execute: apply authorized SQL
+
+selection:
+  lookback_seconds: 0           # 0: latest snapshot available when submitted
+  max_snapshot_age_seconds: 86400
+
+profiles:
+  global_advisor:
+    enabled: true
+    teams: []                  # []: all teams; choices: DEV, OPS, DEV/OPS (or DEV_OPS)
+    # All reported actions: ALTER_TABLE, CREATE_INDEX, DROP_INDEX, ANALYZE,
+    # VACUUM, CONFIG_CHANGE, REVIEW_ONLY, OTHER.
+    # Executable: CREATE_INDEX, DROP_INDEX (including REINDEX), ANALYZE, VACUUM.
+    exclude_actions: []
+    exclude_advisors: []        # Optional exact advisor_id values from the collector
+    # schemas: [public]        # Optional scope filters
+    # tables: [orders]
+    # min_confidence: 80
+
+  index_advisor:
+    enabled: true
+    teams: []
+    # Reported and executable actions: CREATE_INDEX only (never DROP_INDEX).
+    exclude_actions: []
+    exclude_advisors: []
+
+  autovacuum:
+    enabled: true
+    teams: []
+    # Reported and executable actions: ANALYZE, VACUUM, CONFIG_CHANGE.
+    # ANALYZE/VACUUM may include ALTER TABLE settings and other maintenance steps.
+    # CONFIG_CHANGE: ALTER SYSTEM SET + reload; restart changes stay deferred.
+    exclude_actions: []
+    exclude_advisors: []
+
+  parameter_advisor:
+    enabled: true
+    teams: []
+    # Reported action: CONFIG_CHANGE. No executable provider yet.
+    # Enabling this profile currently produces no executable rules.
+    exclude_actions: []
+    exclude_advisors: []
+
+restrictions:
+  # Commands: CREATE_INDEX, DROP_INDEX, REINDEX, ANALYZE, VACUUM,
+  # ALTER_TABLE, ALTER_SYSTEM, RELOAD_CONFIGURATION.
+  # An excluded command blocks the ENTIRE recommendation before execution.
+  # VACUUM (ANALYZE) is checked as both VACUUM and ANALYZE.
+  exclude_commands: []
+
+limits:
+  max_actions: 10
+  statement_timeout_seconds: 300
+  lock_timeout_seconds: 5
+
+# Optional complete replacement of profiles/restrictions/limits for a target.
+# Missing profiles in an override are disabled. Default mode/selection still apply.
+# target_policies:
+#   northwind-demo:
+#     profiles:
+#       autovacuum:
+#         enabled: true
+#         teams: [OPS]
+#         exclude_actions: [CONFIG_CHANGE]
+#     restrictions:
+#       exclude_commands: [ALTER_TABLE]

@@ -1,0 +1,66 @@
+name: pgassistant-autotune
+
+# Common configuration shared across services
+x-common: &common
+  build: .
+  env_file: ${AUTOTUNE_ENV_FILE:-.env}
+  environment:
+    AUTOTUNE_SOURCES_PATH: /config/sources.yaml
+    AUTOTUNE_POLICY_PATH: /config/policy.yaml
+  volumes:
+    - ./config/sources.yaml:/config/sources.yaml:ro
+    - ${AUTOTUNE_POLICY_FILE:-./config/policy.yaml}:/config/policy.yaml:ro
+  extra_hosts:
+    - host.docker.internal:host-gateway
+services:
+  # PostgreSQL autotune database service
+  db:
+    image: postgres:18.3-alpine3.23
+    ports:
+      - 5460:5432
+    environment:
+      POSTGRES_DB: autotune
+      POSTGRES_USER: autotune
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - autotune_db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autotune -d autotune"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  # Database migration service
+  migrate:
+    <<: *common
+    command: ["python", "-m", "app.db"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # API service
+  api:
+    <<: *common
+    ports:
+      - "127.0.0.1:8088:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Worker service
+  worker:
+    <<: *common
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  autotune_db_data:
+    name: ${AUTOTUNE_DB_VOLUME_NAME:-pgassistant-autotune-data}
+    external: ${AUTOTUNE_DB_VOLUME_EXTERNAL:-false}

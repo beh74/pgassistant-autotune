@@ -1,0 +1,35 @@
+# OPS execution preset: preserves the previous OPS action scope.
+# Global maintenance and table maintenance; only two global autovacuum parameters.
+version: 1
+mode: execute
+selection:
+  lookback_seconds: 0
+  max_snapshot_age_seconds: 3600
+profiles:
+  global_advisor:
+    enabled: true
+    teams:
+    - OPS
+    exclude_actions:
+    - CREATE_INDEX
+    - DROP_INDEX
+    exclude_advisors: []
+  autovacuum:
+    enabled: true
+    teams:
+    - OPS
+    exclude_actions: []
+    exclude_advisors:
+    - autovacuum
+    - autovacuum_analyze_threshold
+    - autovacuum_naptime
+    - autovacuum_vacuum_cost_delay
+    - autovacuum_vacuum_cost_limit
+    - autovacuum_vacuum_threshold
+    - log_autovacuum_min_duration
+restrictions:
+  exclude_commands: []
+limits:
+  max_actions: 25
+  statement_timeout_seconds: 300
+  lock_timeout_seconds: 5
