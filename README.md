@@ -299,14 +299,7 @@ GitHub workflow before starting Compose.
 The GitHub Actions workflow in `.github/workflows/docker-image.yml` follows the
 pgassistant-community build: every push to `main` builds and publishes
 `linux/amd64` and `linux/arm64` images to Docker Hub without build cache.
-It can also be started manually with **Run workflow** in GitHub Actions.
-
-Configure these repository Actions secrets before the first publication:
-
-- `DOCKERHUB_USER`: Docker Hub account with write access to `bertrand73/pgassistant-autotune`.
-- `DOCKERHUB_PASSWORD`: Docker Hub access token with write permission.
 
 Images are tagged `bertrand73/pgassistant-autotune:latest` and with the project
-version from `pyproject.toml` (currently `0.1.0`). Increase that version for a new
-release; subsequent builds at the same version replace its existing tag.
+version from `pyproject.toml`. 
 The published image serves both API and worker, using their respective commands.
