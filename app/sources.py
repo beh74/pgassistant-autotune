@@ -16,7 +16,11 @@ def load_sources(path: str) -> dict[str, dict]:
         doc = yaml.safe_load(file.read_text()) or {}
         if not isinstance(doc, dict) or not isinstance(doc.get("sources", []), list):
             raise ValueError("Expected collector YAML with a sources list")
+        if not isinstance(doc.get("defaults", {}), dict):
+            raise ValueError("Source defaults must be a mapping")
         for item in doc.get("sources", []):
+            if not isinstance(item, dict):
+                raise ValueError("Each source must be a mapping")
             source = {**doc.get("defaults", {}), **item}
             target_id = source.get("id")
             if not isinstance(target_id, str) or not target_id or target_id in result:

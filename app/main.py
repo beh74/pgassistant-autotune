@@ -1,12 +1,16 @@
 from datetime import datetime, timezone
 from hmac import compare_digest
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Path
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Path, Request
 from psycopg.types.json import Jsonb
 
+import json
+import yaml
+
+from app.configuration import replace_configuration
 from app.db import connect
 from app.models import AllRequest, TargetRequest, TargetReference, TuneRequest
-from app.policies import load_default_policy
+from app.policies import load_default_policy, PolicyFile, read_policy_file
 from app.settings import Settings
 from app.sources import load_sources
 
@@ -20,6 +24,36 @@ def create_app(settings: Settings | None = None):
             raise HTTPException(401, "Invalid API key")
 
     protected = [Depends(authenticate)]
+
+    @app.post("/api/v1/sources", dependencies=protected)
+    async def post_sources(request: Request, raz: bool = False):
+        content = await request.body()
+        if raz and content.strip():
+            raise HTTPException(422, "raz=true requires an empty body")
+        if not raz and not content.strip():
+            raise HTTPException(422, "A sources YAML body is required")
+        try:
+            replace_configuration(settings.sources_path, b"sources: []\n" if raz else content, load_sources)
+        except (ValueError, TypeError, AttributeError, yaml.YAMLError):
+            raise HTTPException(422, "Invalid sources YAML") from None
+        except OSError:
+            raise HTTPException(503, "Sources file unavailable or not writable") from None
+        return {"status": "reset" if raz else "updated"}
+
+    @app.post("/api/v1/policy", dependencies=protected)
+    async def post_policy(request: Request):
+        if not settings.policy_path:
+            raise HTTPException(503, "No default policy configured")
+        try:
+            # Parse manually to avoid reflecting submitted values in validation errors.
+            configured = PolicyFile.model_validate(json.loads(await request.body()))
+            content = yaml.safe_dump(configured.model_dump(mode="json"), sort_keys=False).encode()
+            replace_configuration(settings.policy_path, content, read_policy_file)
+        except (ValueError, TypeError, yaml.YAMLError):
+            raise HTTPException(422, "Invalid policy JSON") from None
+        except OSError:
+            raise HTTPException(503, "Policy file unavailable or not writable") from None
+        return {"status": "updated"}
 
     def default_policy():
         try:

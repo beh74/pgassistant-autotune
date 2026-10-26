@@ -2,14 +2,13 @@ name: pgassistant-autotune
 
 # Common configuration shared across services
 x-common: &common
-  build: .
+  image: bertrand73/pgassistant-autotune:${AUTOTUNE_IMAGE_TAG:-latest}
   env_file: ${AUTOTUNE_ENV_FILE:-.env}
   environment:
     AUTOTUNE_SOURCES_PATH: /config/sources.yaml
-    AUTOTUNE_POLICY_PATH: /config/policy.yaml
+    AUTOTUNE_POLICY_PATH: ${AUTOTUNE_POLICY_PATH:-/config/policy.yaml}
   volumes:
-    - ./config/sources.yaml:/config/sources.yaml:ro
-    - ${AUTOTUNE_POLICY_FILE:-./config/policy.yaml}:/config/policy.yaml:ro
+    - ./config:/config
   extra_hosts:
     - host.docker.internal:host-gateway
 services:

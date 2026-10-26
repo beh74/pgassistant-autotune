@@ -37,7 +37,7 @@ cp .env.example .env
 
 In `.env`, set `POSTGRES_PASSWORD`, `AUTOTUNE_API_KEY` and
 `AUTOTUNE_COLLECTOR_DATABASE_URL`. The collector connection needs read access to
-its recommendation snapshots. Keep `AUTOTUNE_POLICY_FILE=./config/policy.yaml`
+its recommendation snapshots. Keep `AUTOTUNE_POLICY_PATH=/config/policy.yaml`
 to use the default policy.
 
 List your databases in [`config/sources.yaml`](config/sources.yaml), using the
@@ -89,7 +89,8 @@ disabled; activate only the profiles you want.
 **3. Start and validate.**
 
 ```sh
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 docker compose exec worker python -m app.policies /config/policy.yaml
 ```
 
@@ -129,6 +130,44 @@ To tune **just one database**, use its collector ID:
 curl -X POST 'http://localhost:8088/api/v1/autotune-targetid?target_id=production-app' \
   -H "X-API-Key: $AUTOTUNE_API_KEY"
 ```
+
+## Update configuration through the API
+
+Both endpoints require the same `X-API-Key` as tuning requests. Send the file
+as the request body (not a multipart form):
+
+```sh
+curl -X POST http://localhost:8088/api/v1/sources \
+  -H "X-API-Key: $AUTOTUNE_API_KEY" \
+  -H 'Content-Type: application/yaml' --data-binary @sources.yaml
+
+curl -X POST 'http://localhost:8088/api/v1/sources?raz=true' \
+  -H "X-API-Key: $AUTOTUNE_API_KEY"
+
+curl -X POST http://localhost:8088/api/v1/policy \
+  -H "X-API-Key: $AUTOTUNE_API_KEY" \
+  -H 'Content-Type: application/json' --data-binary @policy.json
+```
+
+The sources upload replaces the entire configured sources file. `raz=true`
+requires an empty body and writes `sources: []`. Queued jobs can no longer
+resolve removed targets; connections already opened are unaffected.
+
+`policy.json` uses the same structure as `policy.yaml` (for example
+`{"version":1,"mode":"dry_run","profiles":{"index_advisor":{"enabled":true}}}`).
+It is validated and saved as YAML at `AUTOTUNE_POLICY_PATH`. New submissions use
+the updated policy; queued runs retain their original policy.
+
+Invalid input returns 422 without replacing the existing file; unavailable or
+unwritable storage returns 503. Responses contain only an update/reset status.
+Files are replaced atomically with owner-only permissions. Configuration is
+stored on disk in plaintext, without additional database storage or encryption.
+Use HTTPS when accessing the API over a network, and exclude credential files
+from version control and unprotected backups.
+
+Compose shares the writable `./config` directory between API and workers.
+Recreate the containers after upgrading from the former read-only file mounts.
+For deployments on separate hosts, provide a shared configuration directory.
 
 ## Choose what runs
 
@@ -228,11 +267,15 @@ Partial snapshots are refused, with the affected advisor identified in the logs.
 - [Environment template](.env.example) — database connections, API key and policy path.
 - [API documentation](http://localhost:8088/docs) — endpoints and advanced request bodies.
 
-To select another policy, set `AUTOTUNE_POLICY_FILE` in `.env`. After changing its
-path or updating the code, rebuild and recreate the services:
+To select another policy, set `AUTOTUNE_POLICY_PATH` in `.env` to its container path
+(for example `/config/policy_ops.yaml`). The former `AUTOTUNE_POLICY_FILE` setting
+is replaced by `AUTOTUNE_POLICY_PATH`. After changing its
+path, recreate the services. To update the application, pull the published image
+and recreate the services:
 
 ```sh
-docker compose up -d --build api worker
+docker compose pull api worker migrate
+docker compose up -d api worker
 ```
 
 For local development:
@@ -245,3 +288,25 @@ python3 -m venv .venv
 
 Integration tests require `AUTOTUNE_TEST_DSN` pointing to a **disposable PostgreSQL
 database**: they recreate test tables and the `autotune` schema.
+
+Compose uses `bertrand73/pgassistant-autotune:latest` by default for the API,
+worker and migrations. Set `AUTOTUNE_IMAGE_TAG` in `.env` to a published version
+(such as `0.1.0`) to pin the image. The image must have been published by the
+GitHub workflow before starting Compose.
+
+## Docker image publication
+
+The GitHub Actions workflow in `.github/workflows/docker-image.yml` follows the
+pgassistant-community build: every push to `main` builds and publishes
+`linux/amd64` and `linux/arm64` images to Docker Hub without build cache.
+It can also be started manually with **Run workflow** in GitHub Actions.
+
+Configure these repository Actions secrets before the first publication:
+
+- `DOCKERHUB_USER`: Docker Hub account with write access to `bertrand73/pgassistant-autotune`.
+- `DOCKERHUB_PASSWORD`: Docker Hub access token with write permission.
+
+Images are tagged `bertrand73/pgassistant-autotune:latest` and with the project
+version from `pyproject.toml` (currently `0.1.0`). Increase that version for a new
+release; subsequent builds at the same version replace its existing tag.
+The published image serves both API and worker, using their respective commands.
